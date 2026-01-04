@@ -1,27 +1,30 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+import os
 
-# Defines the Database URL
-# For SQLite, creates a file named "finance.db" in backend folder.
-SQLALCHEMY_DATABASE_URL = "sqlite:///./finance.db"
+# 1. Get the DB URL from the Environment (Vercel)
+# If it doesn't exist, fall back to local SQLite (Laptop)
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./finance.db")
 
-# Creates the Engine
-# connect_args={"check_same_thread": False} is needed ONLY for SQLite.
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-)
+# 2. Fix the URL for SQLAlchemy (Postgres requires 'postgresql://')
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Creates a SessionLocal class
-# Each instance of this class will be a database session.
+# 3. Configure the Engine
+if "sqlite" in DATABASE_URL:
+    # SQLite settings
+    engine = create_engine(
+        DATABASE_URL, connect_args={"check_same_thread": False}
+    )
+else:
+    # Postgres settings (Neon)
+    engine = create_engine(DATABASE_URL)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Creates a Base class
-# Later, we will inherit from this class to create each of our database models.
 Base = declarative_base()
 
-# Dependency
-# This is a helper function to get a database session in our endpoints.
 def get_db():
     db = SessionLocal()
     try:
