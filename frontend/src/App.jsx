@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import api from './api';
 import TransactionList from './components/TransactionList';
 import TransactionForm from './components/TransactionForm';
-import UploadForm from './components/UploadForm'; // <--- IMPORT THIS
+import UploadForm from './components/UploadForm';
+import SummaryChart from './components/SummaryChart'; // <--- NEW IMPORT
 
 function App() {
   const [transactions, setTransactions] = useState([]);
@@ -29,18 +30,22 @@ function App() {
       </nav>
 
       <div className='container'>
-        <div className="row">
-            {/* Left Column: Manual Form */}
+
+        {/* TOP ROW: Forms and Chart */}
+        <div className="row mb-4">
+            {/* Left Column: Forms */}
             <div className="col-md-6">
                 <TransactionForm onTransactionAdded={fetchTransactions} />
+                <UploadForm onUploadSuccess={fetchTransactions} />
             </div>
 
-            {/* Right Column: Upload Form (NEW) */}
+            {/* Right Column: Chart (NEW) */}
             <div className="col-md-6">
-                <UploadForm onUploadSuccess={fetchTransactions} />
+                <SummaryChart transactions={transactions} />
             </div>
         </div>
 
+        {/* BOTTOM ROW: Table */}
         <TransactionList transactions={transactions} />
       </div>
     </div>
