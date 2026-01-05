@@ -1,34 +1,35 @@
-# Force Vercel Rebuild - Timestamp 01
 import sys
 import os
-
-# --- CRITICAL FIX FOR VERCEL ---
-# This ensures Python can find the 'db' and 'schemas' modules
-# regardless of where the app is started from (Root vs Backend folder).
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-# -------------------------------
-
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from typing import List, Annotated
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from db import models, database
-import schemas
 import pandas as pd
 import io
 
+# --- BULLETPROOF IMPORT BLOCK ---
+# This handles the difference between "Local Laptop" and "Vercel Cloud"
+try:
+    # Try the local way first (when running from backend/ folder)
+    from db import models, database
+    import schemas
+except ImportError:
+    # If that fails, try the Vercel way (absolute path from root)
+    from backend.db import models, database
+    from backend import schemas
+# --------------------------------
+
 # --- VERCEL ROUTING FIX ---
-# If running on Vercel, we tell FastAPI that all requests start with /api
+# Detect if running on Vercel
 is_vercel = os.getenv("VERCEL")
 app = FastAPI(root_path="/api" if is_vercel else "")
 
 # --- CORS CONFIGURATION ---
 origins = [
     "http://localhost:5173",
-    "http://localhost:5176",
-    "https://finance-dashboard.vercel.app",  # Your specific Vercel URL
-    "*",  # Allow all origins (Simplest for CV demos)
+    "https://finance-dashboard.vercel.app",
+    "*",
 ]
 
 app.add_middleware(
@@ -39,11 +40,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create Database Tables
+# Create Tables
 models.Base.metadata.create_all(bind=database.engine)
 
 
-# Database Dependency
 def get_db():
     db = database.SessionLocal()
     try:
@@ -74,13 +74,8 @@ async def read_transactions(db: db_dependency, skip: int = 0, limit: int = 100):
 
 @app.post("/transactions/upload")
 async def upload_transactions(db: db_dependency, file: UploadFile = File(...)):
-    # 1. Read the file content
     contents = await file.read()
-
-    # 2. Convert bytes to a Pandas DataFrame
     df = pd.read_csv(io.BytesIO(contents))
-
-    # 3. Iterate and save
     transactions_added = 0
 
     for index, row in df.iterrows():
@@ -95,7 +90,6 @@ async def upload_transactions(db: db_dependency, file: UploadFile = File(...)):
             db.add(transaction)
             transactions_added += 1
         except Exception as e:
-            print(f"Error skipping row {index}: {e}")
             continue
 
     db.commit()
