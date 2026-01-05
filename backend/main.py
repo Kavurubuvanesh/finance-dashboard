@@ -1,37 +1,42 @@
 import sys
 import os
+
+# --- PATH HACK FOR VERCEL ---
+# Get the directory where this file (main.py) lives
+current_dir = os.path.dirname(os.path.abspath(__file__))
+# Get the parent directory (root)
+parent_dir = os.path.dirname(current_dir)
+
+# Force add both to Python's search path
+sys.path.append(current_dir)
+sys.path.append(parent_dir)
+# ---------------------------
+
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from typing import List, Annotated
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 import io
 
-# --- BULLETPROOF IMPORT BLOCK ---
-# This handles the difference between "Local Laptop" and "Vercel Cloud"
+# --- ROBUST IMPORTS ---
+# We try importing with the 'backend.' prefix (Cloud/Root style)
+# If that fails, we try local style.
 try:
-    # Try the local way first (when running from backend/ folder)
-    from db import models, database
-    import schemas
-except ImportError:
-    # If that fails, try the Vercel way (absolute path from root)
     from backend.db import models, database
     from backend import schemas
-# --------------------------------
+except ImportError:
+    # Fallback for local testing
+    from db import models, database
+    import schemas
+# ----------------------
 
-# --- VERCEL ROUTING FIX ---
-# Detect if running on Vercel
+# Detect Vercel
 is_vercel = os.getenv("VERCEL")
 app = FastAPI(root_path="/api" if is_vercel else "")
 
-# --- CORS CONFIGURATION ---
-origins = [
-    "http://localhost:5173",
-    "https://finance-dashboard.vercel.app",
-    "*",
-]
-
+# CORS
+origins = ["*"]  # Allow everything for now
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -76,21 +81,22 @@ async def read_transactions(db: db_dependency, skip: int = 0, limit: int = 100):
 async def upload_transactions(db: db_dependency, file: UploadFile = File(...)):
     contents = await file.read()
     df = pd.read_csv(io.BytesIO(contents))
-    transactions_added = 0
-
+    count = 0
     for index, row in df.iterrows():
         try:
-            transaction = models.Transaction(
+            # Flexible boolean conversion
+            is_inc = str(row['is_income']).lower() in ['true', '1', 'yes']
+
+            t = models.Transaction(
                 amount=float(row['amount']),
-                category=row['category'],
-                description=row.get('description', ''),
-                is_income=bool(row['is_income']),
+                category=str(row['category']),
+                description=str(row.get('description', '')),
+                is_income=is_inc,
                 date=str(row['date'])
             )
-            db.add(transaction)
-            transactions_added += 1
-        except Exception as e:
+            db.add(t)
+            count += 1
+        except Exception:
             continue
-
     db.commit()
-    return {"message": f"Successfully uploaded {transactions_added} transactions"}
+    return {"message": f"Uploaded {count} transactions"}
