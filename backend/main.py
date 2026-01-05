@@ -1,4 +1,13 @@
 # Force Vercel Rebuild - Timestamp 01
+import sys
+import os
+
+# --- CRITICAL FIX FOR VERCEL ---
+# This ensures Python can find the 'db' and 'schemas' modules
+# regardless of where the app is started from (Root vs Backend folder).
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# -------------------------------
+
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from typing import List, Annotated
 from sqlalchemy.orm import Session
@@ -6,14 +15,20 @@ from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from db import models, database
 import schemas
-import pandas as pd  # <--- NEW
-import io  # <--- NEW
+import pandas as pd
+import io
 
-app = FastAPI()
+# --- VERCEL ROUTING FIX ---
+# If running on Vercel, we tell FastAPI that all requests start with /api
+is_vercel = os.getenv("VERCEL")
+app = FastAPI(root_path="/api" if is_vercel else "")
 
+# --- CORS CONFIGURATION ---
 origins = [
     "http://localhost:5173",
-    "http://localhost:5176",  # Added your port just in case
+    "http://localhost:5176",
+    "https://finance-dashboard.vercel.app",  # Your specific Vercel URL
+    "*",  # Allow all origins (Simplest for CV demos)
 ]
 
 app.add_middleware(
@@ -24,9 +39,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Create Database Tables
 models.Base.metadata.create_all(bind=database.engine)
 
 
+# Database Dependency
 def get_db():
     db = database.SessionLocal()
     try:
@@ -38,7 +55,7 @@ def get_db():
 db_dependency = Annotated[Session, Depends(get_db)]
 
 
-# --- EXISTING ENDPOINTS ---
+# --- ENDPOINTS ---
 
 @app.post("/transactions/", response_model=schemas.TransactionModel)
 async def create_transaction(transaction: schemas.TransactionCreate, db: db_dependency):
@@ -55,9 +72,6 @@ async def read_transactions(db: db_dependency, skip: int = 0, limit: int = 100):
     return transactions
 
 
-# --- NEW AUTOMATION ENDPOINT ---
-
-# SWAP THE ORDER: db first, file second
 @app.post("/transactions/upload")
 async def upload_transactions(db: db_dependency, file: UploadFile = File(...)):
     # 1. Read the file content
